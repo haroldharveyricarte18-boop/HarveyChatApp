@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HarveyChatApp</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --sidebar-bg: #2c343f;
+            --active-blue: #5d68e2;
+            --bg-light: #f4f7fe;
+            --text-gray: #8e94a9;
+            --border-color: #e0e0e0;
+        }
+
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; background: var(--bg-light); overflow: hidden; }
+        
+        /* Main Sidebar */
+        .sidebar { width: 260px; background: var(--sidebar-bg); color: white; display: flex; flex-direction: column; flex-shrink: 0; }
+        .sidebar-header { padding: 25px; font-weight: bold; letter-spacing: 1px; border-bottom: 1px solid #3d4654; }
+        
+        .user-profile { padding: 20px; display: flex; align-items: center; gap: 10px; }
+        .user-profile img { width: 40px; height: 40px; border-radius: 50%; background: #555; }
+        .user-info strong { display: block; font-size: 14px; }
+        .user-info small { color: var(--text-gray); font-size: 12px; }
+        
+        .menu-item { padding: 12px 25px; color: var(--text-gray); cursor: pointer; display: flex; align-items: center; gap: 15px; transition: 0.3s; }
+        .menu-item:hover { color: white; }
+        .menu-item.active { background: var(--active-blue); color: white; border-radius: 0 20px 20px 0; margin-right: 20px; }
+
+        /* Chat Layout Container */
+        .chat-container { flex: 1; display: grid; grid-template-columns: 350px 1fr; background: white; }
+        
+        /* Conversation List (Left Panel) */
+        .conv-list { border-right: 1px solid var(--border-color); display: flex; flex-direction: column; }
+        .conv-header { padding: 20px; border-bottom: 1px solid var(--border-color); font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .active-user-item { padding: 15px 20px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #f9f9f9; }
+        .active-user-item:hover { background: #f0f4ff; }
+        .active-user-item img { width: 35px; height: 35px; border-radius: 50%; }
+
+        /* Main Chat Area (Right Panel) */
+        .main-chat { 
+    display: flex; 
+    flex-direction: column; 
+    background: white; 
+    height: 100vh; /* Keeps the chat at full screen height */
+    overflow: hidden; 
+}
+        .chat-header { padding: 15px 25px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; }
+        
+        .messages { 
+    flex: 1; 
+    padding: 20px; 
+    overflow-y: auto; /* Enables scrolling for messages only */
+    display: flex; 
+    flex-direction: column; 
+    gap: 15px; 
+    background: #fafbfc; 
+    scroll-behavior: smooth; 
+}
+        .message { max-width: 65%; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.4; position: relative; }
+        .msg-received { background: var(--active-blue); color: white; align-self: flex-start; border-bottom-left-radius: 2px; }
+        .msg-sent { background: #e9ecef; color: #333; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .msg-author { font-size: 10px; margin-bottom: 4px; display: block; opacity: 0.8; }
+
+        .input-area { 
+    padding: 20px; 
+    border-top: 1px solid var(--border-color); 
+    display: flex; 
+    gap: 10px; 
+    background: white; 
+    flex-shrink: 0; /* Prevents the input bar from being squeezed out */
+}
+        input { flex: 1; padding: 12px 15px; border: 1px solid #ddd; border-radius: 8px; outline: none; }
+        input:focus { border-color: var(--active-blue); }
+        .send-btn { background: var(--active-blue); color: white; border: none; padding: 0 20px; border-radius: 8px; cursor: pointer; font-weight: bold; }
+
+        .msg-time {
+    display: block;
+    font-size: 10px;
+    margin-top: 4px;
+    color: inherit; 
+    opacity: 0.7;
+}
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="sidebar-header">HarveyChatApp</div>
+        <div class="user-profile">
+            <img id="myAvatar" src="" alt="profile">
+            <div class="user-info">
+                <strong id="myName">Loading...</strong>
+                <small id="myRole">Web Developer</small>
+            </div>
+        </div>
+        <div class="menu-item"><i class="fas fa-th-large"></i> Dashboard</div>
+        <div class="menu-item active"><i class="fas fa-comment-dots"></i> Conversations</div>
+        <div class="menu-item"><i class="fas fa-folder"></i> Projects</div>
+        <div class="menu-item"><i class="fas fa-calendar-alt"></i> Schedule</div>
+        
+        <div style="margin-top: auto;" class="menu-item" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Log Out</div>
+    </div>
+
+    <div class="chat-container">
+        <div class="conv-list">
+            <div class="conv-header">
+                <span>All Conversations</span>
+                <button style="background:none; border:none; color:var(--active-blue); cursor:pointer;"><i class="fas fa-plus-circle"></i></button>
+            </div>
+            <div id="user-list">
+                <div class="active-user-item">
+                    <img src="https://ui-avatars.com/api/?name=Global+Chat&background=5d68e2&color=fff" alt="">
+                    <div><strong>Global Group</strong><br><small style="color:var(--text-gray)">Active now</small></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="main-chat">
+            <div class="chat-header">
+                <div><strong>Global Chat Room</strong></div>
+                <div style="color: var(--text-gray); font-size: 18px;">
+                    <i class="fas fa-video" style="margin-right:15px; cursor:pointer;"></i>
+                    <i class="fas fa-phone" style="margin-right:15px; cursor:pointer;"></i>
+                    <i class="fas fa-ellipsis-v" style="cursor:pointer;"></i>
+                </div>
+            </div>
+
+            <div id="chat-box" class="messages">
+                </div>
+
+            <div class="input-area">
+                <input type="text" id="msgInput" placeholder="Write a message..." onkeypress="handleKey(event)">
+                <button class="send-btn" onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentChatTarget = "Global"; // Default to the main room
+
+        const getCookie = (name) => {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
+            return "Guest";
+        }
+
+        const currentUsername = getCookie("username");
+        document.getElementById("myName").innerText = currentUsername;
+        document.getElementById("myAvatar").src = `https://ui-avatars.com/api/?name=${currentUsername}&background=random`;
+
+        // 2. WEBSOCKET LOGIC
+        let socket = new WebSocket("ws://" + window.location.host + "/ws");
+
+     socket.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    const chatBox = document.getElementById("chat-box");
+
+    if (data.type === "users") {
+        updateUserList(data.list);
+    } else if (data.type === "message") {
+        // --- PRIVATE MESSAGING LOGIC ---
+        // 1. Is this a global message?
+        const isGlobal = data.target === "Global" || !data.target;
+        
+        // 2. Should I see this message right now?
+        // Show if: (It's Global AND I'm in Global) OR (It's from/to the person I'm privately chatting with)
+        const isRelevant = (isGlobal && currentChatTarget === "Global") || 
+                           (data.user === currentChatTarget && data.target === currentUsername) || 
+                           (data.user === currentUsername && data.target === currentChatTarget);
+
+        if (isRelevant) {
+            let msgDiv = document.createElement("div");
+            const isMe = data.user === currentUsername;
+            
+            msgDiv.className = isMe ? "message msg-sent" : "message msg-received";
+            msgDiv.innerHTML = `
+                <span class="msg-author">${isMe ? "You" : data.user}</span>
+                <div class="msg-body">${data.body}</div>
+                <div style="font-size: 10px; opacity: 0.6; margin-top: 4px; text-align: right;">
+                    ${data.time}
+                </div>
+            `;
+
+            chatBox.appendChild(msgDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    }
+};
+
+        function updateUserList(users) {
+    const listDiv = document.getElementById("user-list");
+    listDiv.innerHTML = "";
+    
+    // Always add the Global Group first
+    const globalItem = document.createElement("div");
+    globalItem.className = "active-user-item";
+    globalItem.innerHTML = `<strong>Global Chat Room</strong>`;
+    globalItem.onclick = () => switchChat("Global");
+    listDiv.appendChild(globalItem);
+
+    users.forEach(user => {
+        if (user === currentUsername) return; // Don't chat with yourself
+        const userItem = document.createElement("div");
+        userItem.className = "active-user-item";
+        userItem.innerHTML = `
+            <img src="https://ui-avatars.com/api/?name=${user}&background=random" alt="">
+            <div><strong>${user}</strong><br><small style="color:#28a745">Online</small></div>
+        `;
+        userItem.onclick = () => switchChat(user);
+        listDiv.appendChild(userItem);
+    });
+}
+
+function switchChat(target) {
+    currentChatTarget = target;
+    document.querySelector(".chat-header strong").innerText = (target === "Global") ? "Global Chat Room" : "Chat with " + target;
+    document.getElementById("chat-box").innerHTML = ""; // Clear screen for new chat
+}
+
+       function sendMessage() {
+    let input = document.getElementById("msgInput");
+    if(input.value.trim() !== "") {
+        const messageData = {
+            type: "message",
+            target: currentChatTarget, // This sends it to the person you clicked
+            body: input.value
+        };
+        socket.send(JSON.stringify(messageData));
+        input.value = "";
+    }
+}
+
+        function handleKey(e) {
+            if (e.key === 'Enter') sendMessage();
+        }
+
+        function logout() {
+            // Clear both potential cookie names we've used in testing
+            document.cookie = "username=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            document.cookie = "session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            window.location.href = "/login";
+        }
+    </script>
+</body>
+</html>
