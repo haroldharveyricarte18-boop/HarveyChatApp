@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: harvey-chat-app
+    runtime: go
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: harvey_chat_db
+          property: connectionString
+    buildCommand: go build -o main main.go
+    startCommand: ./main

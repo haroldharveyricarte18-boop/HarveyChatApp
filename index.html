@@ -83,8 +83,35 @@
     color: inherit; 
     opacity: 0.7;
 }
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+    #menu-toggle { display: block !important; } /* Show hamburger on mobile */
+
+    .sidebar {
+        position: fixed;
+        left: -260px; /* Hide sidebar off-screen */
+        top: 0;
+        height: 100%;
+        z-index: 1000;
+        transition: 0.3s;
+    }
+
+    .sidebar.active { left: 0; } /* Slide sidebar in when active */
+
+    .chat-container {
+        grid-template-columns: 1fr; /* Stack layout: hide conversation list */
+    }
+
+    .conv-list {
+        display: none; /* Hide the user list panel on mobile to save space */
+    }
+    
+    .message { max-width: 85%; } /* Make message bubbles wider on small screens */
+}
     </style>
 </head>
+<div id="sidebar-overlay" onclick="toggleSidebar()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"></div>
 <body>
 
     <div class="sidebar">
@@ -118,27 +145,36 @@
             </div>
         </div>
         
-        <div class="main-chat">
-            <div class="chat-header">
-                <div><strong>Global Chat Room</strong></div>
-                <div style="color: var(--text-gray); font-size: 18px;">
-                    <i class="fas fa-video" style="margin-right:15px; cursor:pointer;"></i>
-                    <i class="fas fa-phone" style="margin-right:15px; cursor:pointer;"></i>
-                    <i class="fas fa-ellipsis-v" style="cursor:pointer;"></i>
-                </div>
-            </div>
-
-            <div id="chat-box" class="messages">
-                </div>
-
-            <div class="input-area">
-                <input type="text" id="msgInput" placeholder="Write a message..." onkeypress="handleKey(event)">
-                <button class="send-btn" onclick="sendMessage()">Send</button>
-            </div>
+       <div class="main-chat">
+    <div class="chat-header">
+    <div style="display: flex; align-items: center; gap: 15px;">
+        <i class="fas fa-bars" id="menu-toggle" style="cursor: pointer; font-size: 20px; display: none;" onclick="toggleSidebar()"></i>
+        <strong id="chat-title">Global Chat Room</strong>
+    </div>
+        <div style="color: var(--text-gray); font-size: 18px;">
+            <i class="fas fa-video" style="margin-right:15px; cursor:pointer;"></i>
+            <i class="fas fa-phone" style="margin-right:15px; cursor:pointer;"></i>
+            <i class="fas fa-ellipsis-v" style="cursor:pointer;"></i>
         </div>
     </div>
 
+    <div id="chat-box" class="messages">
+        </div>
+
+    <div class="input-area">
+        <input type="text" id="msgInput" placeholder="Write a message..." onkeypress="handleKey(event)">
+        <button class="send-btn" onclick="sendMessage()">Send</button>
+    </div>
+</div>
+
     <script>
+       function toggleSidebar() {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    sidebar.classList.toggle('active');
+    overlay.style.display = sidebar.classList.contains('active') ? 'block' : 'none';
+}
+
         let currentChatTarget = "Global"; // Default to the main room
 
         const getCookie = (name) => {
@@ -153,7 +189,8 @@
         document.getElementById("myAvatar").src = `https://ui-avatars.com/api/?name=${currentUsername}&background=random`;
 
         // 2. WEBSOCKET LOGIC
-        let socket = new WebSocket("ws://" + window.location.host + "/ws");
+        const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+let socket = new WebSocket(protocol + window.location.host + "/ws");
 
      socket.onmessage = function(event) {
     const data = JSON.parse(event.data);
@@ -216,10 +253,16 @@
 }
 
 function switchChat(target) {
-    currentChatTarget = target;
-    document.querySelector(".chat-header strong").innerText = (target === "Global") ? "Global Chat Room" : "Chat with " + target;
-    document.getElementById("chat-box").innerHTML = ""; // Clear screen for new chat
-}
+            currentChatTarget = target;
+            document.getElementById("chat-title").innerText = (target === "Global") ? "Global Chat Room" : "Chat with " + target;
+            document.getElementById("chat-box").innerHTML = ""; 
+            
+            // Highlight the active user in the list
+            document.querySelectorAll('.active-user-item').forEach(el => el.classList.remove('active-chat'));
+            
+            // Ask server for specific history
+            socket.send(JSON.stringify({ type: "load_history", target: target }));
+        }
 
        function sendMessage() {
     let input = document.getElementById("msgInput");
