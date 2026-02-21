@@ -249,26 +249,37 @@ function sendImage(input) {
         }
 
         const currentUsername = getCookie("username");
-        document.getElementById("myName").innerText = currentUsername;
-        document.getElementById("myAvatar").src = `https://ui-avatars.com/api/?name=${currentUsername}&background=random`;
+
+// If no username is found, or it's "Guest", redirect to login immediately
+if (!currentUsername || currentUsername === "Guest") {
+    window.location.href = "/";
+}
+
+document.getElementById("myName").innerText = currentUsername;
+document.getElementById("myAvatar").src = `https://ui-avatars.com/api/?name=${currentUsername}&background=random`;
 
         // 2. WEBSOCKET LOGIC
         const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
 let socket = new WebSocket(protocol + window.location.host + "/ws");
 
-     socket.onmessage = function(event) {
+    socket.onmessage = function(event) {
     const data = JSON.parse(event.data);
     const chatBox = document.getElementById("chat-box");
 
     if (data.type === "users") {
         updateUserList(data.list);
-    } else if (data.type === "message") {
-        // --- PRIVATE MESSAGING LOGIC ---
-        // 1. Is this a global message?
+    } 
+    // --- NEW: Handle message deletion signal ---
+    else if (data.type === "message_deleted") {
+        const el = document.querySelector(`[data-id="${data.id}"]`);
+        if (el) {
+            el.style.opacity = "0"; // Smooth fade out
+            setTimeout(() => el.remove(), 300);
+        }
+    } 
+    else if (data.type === "message") {
         const isGlobal = data.target === "Global" || !data.target;
         
-        // 2. Should I see this message right now?
-        // Show if: (It's Global AND I'm in Global) OR (It's from/to the person I'm privately chatting with)
         const isRelevant = (isGlobal && currentChatTarget === "Global") || 
                            (data.user === currentChatTarget && data.target === currentUsername) || 
                            (data.user === currentUsername && data.target === currentChatTarget);
@@ -277,15 +288,24 @@ let socket = new WebSocket(protocol + window.location.host + "/ws");
             let msgDiv = document.createElement("div");
             const isMe = data.user === currentUsername;
             
+            // 1. Assign the database ID to the HTML element
+            msgDiv.setAttribute("data-id", data.id);
+            
             msgDiv.className = isMe ? "message msg-sent" : "message msg-received";
+            
+            // 2. Add the Trash Icon ONLY if isMe is true
+            const deleteBtn = isMe ? 
+                `<i class="fas fa-trash-alt" style="cursor:pointer; margin-left:8px; color:#ff4d4d; font-size:12px;" onclick="confirmDelete(${data.id})"></i>` : '';
+
             msgDiv.innerHTML = `
                 <span class="msg-author">${isMe ? "You" : data.user}</span>
                 ${data.is_image ? 
-    `<img src="${data.body}" class="chat-img" onclick="window.open(this.src)">` : 
-    `<div class="msg-body">${data.body}</div>`
-}
-                <div style="font-size: 10px; opacity: 0.6; margin-top: 4px; text-align: right;">
+                    `<img src="${data.body}" class="chat-img" onclick="window.open(this.src)">` : 
+                    `<div class="msg-body">${data.body}</div>`
+                }
+                <div style="display: flex; justify-content: flex-end; align-items: center; font-size: 10px; opacity: 0.6; margin-top: 4px;">
                     ${data.time}
+                    ${deleteBtn}
                 </div>
             `;
 
@@ -349,11 +369,27 @@ function switchChat(target) {
         }
 
         function logout() {
-            // Clear both potential cookie names we've used in testing
-            document.cookie = "username=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-            document.cookie = "session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-            window.location.href = "/login";
-        }
+    // 1. Kill the cookie for the whole site
+    document.cookie = "username=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    
+    // 2. Clear session storage just in case
+    sessionStorage.clear();
+    localStorage.clear();
+
+    // 3. Force a hard redirect to the home page
+    // Using window.location.replace is better because it doesn't keep the dashboard in history
+    window.location.replace("/"); 
+}
+
+       // --- Helper function to send delete request to Go server ---
+function confirmDelete(messageId) {
+    if (confirm("Permanently delete this message?")) {
+        socket.send(JSON.stringify({
+            type: "delete_message",
+            id: parseInt(messageId)
+        }));
+    }
+}
     </script>
 </body>
 </html>

@@ -22,6 +22,7 @@ type Event struct {
 	List    []string `json:"list"`
 	Time    string   `json:"time"`
 	IsImage bool     `json:"is_image"`
+	ID      int      `json:"id"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -72,23 +73,29 @@ func main() {
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
-	_, err := r.Cookie("username")
-	if err != nil {
-		fmt.Fprintf(w, `
-			<html>
-			<body style="display:grid; place-items:center; height:100vh; font-family:sans-serif;">
-				<form action="/login" method="POST">
-					<input type="text" name="username" placeholder="Enter your name" required>
-					<button type="submit">Join Chat</button>
-				</form>
-			</body>
-			</html>`)
+	// IMPORTANT: Tell the browser NOT to cache this page
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+
+	cookie, err := r.Cookie("username")
+
+	// If the cookie is missing OR the value is empty, show login
+	if err != nil || cookie.Value == "" {
+		http.ServeFile(w, r, "login.html")
 		return
 	}
+
+	// Only if a real username exists, show the dashboard
 	http.ServeFile(w, r, "index.html")
 }
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
+	// If they are just visiting the page (GET), show the file
+	if r.Method == http.MethodGet {
+		http.ServeFile(w, r, "login.html")
+		return
+	}
+
+	// If they are submitting the form (POST), set the cookie
 	if r.Method == http.MethodPost {
 		username := r.FormValue("username")
 		http.SetCookie(w, &http.Cookie{
@@ -108,14 +115,19 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cookie, _ := r.Cookie("username")
+	cookie, err := r.Cookie("username")
+	if err != nil {
+		// If there is no cookie, don't allow the connection
+		fmt.Println("WS Connection rejected: No username cookie")
+		return
+	}
 	username := cookie.Value
 
 	mutex.Lock()
 	clients[username] = conn
 	mutex.Unlock()
 
-	// Automatically load Global history when they first join so the screen isn't empty
+	// Automatically load Global history when they first join
 	loadSpecificHistory(conn, username, "Global")
 
 	broadcastUserList()
@@ -135,20 +147,32 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		// --- NEW LOGIC START ---
-		// If the user clicked a name in the sidebar, we just load history and stop
+		// 1. Handle History Requests
 		if event.Type == "load_history" {
 			loadSpecificHistory(conn, username, event.Target)
 			continue
 		}
-		// --- NEW LOGIC END ---
 
-		event.User = username
-		event.Time = time.Now().Format("3:04 PM")
+		// 2. Handle Delete Requests (Must be independent of message type)
+		if event.Type == "delete_message" {
+			// Removes message from database only if sender matches current user
+			_, err := db.Exec("DELETE FROM messages WHERE id = $1 AND sender = $2", event.ID, username)
+			if err == nil {
+				// Broadcast signal to all users to remove message from UI
+				broadcastMessage(Event{Type: "message_deleted", ID: event.ID})
+			} else {
+				fmt.Println("Delete SQL error:", err)
+			}
+			continue
+		}
 
-		// Only save and broadcast if it's an actual message
+		// 3. Handle Regular Messages
 		if event.Type == "message" {
-			saveMessage(event)
+			event.User = username
+			event.Time = time.Now().Format("3:04 PM")
+
+			// Save message and retrieve its new database ID
+			saveMessage(&event)
 
 			if event.Target != "" && event.Target != "Global" {
 				sendPrivateMessage(event)
@@ -159,13 +183,18 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func saveMessage(e Event) {
+func saveMessage(e *Event) { // Note the * before Event
 	if e.Type != "message" {
 		return
 	}
-	// Added is_image to the INSERT statement
-	_, err := db.Exec("INSERT INTO messages (sender, target, body, time, is_image) VALUES ($1, $2, $3, $4, $5)",
-		e.User, e.Target, e.Body, e.Time, e.IsImage)
+
+	// We use QueryRow instead of Exec so we can catch the 'id'
+	err := db.QueryRow(`
+		INSERT INTO messages (sender, target, body, time, is_image) 
+		VALUES ($1, $2, $3, $4, $5) 
+		RETURNING id`,
+		e.User, e.Target, e.Body, e.Time, e.IsImage).Scan(&e.ID)
+
 	if err != nil {
 		fmt.Println("Save error:", err)
 	}
@@ -240,12 +269,12 @@ func loadSpecificHistory(conn *websocket.Conn, username string, target string) {
 	var err error
 
 	if target == "Global" {
-		// Added is_image to SELECT
-		rows, err = db.Query("SELECT sender, target, body, time, is_image FROM messages WHERE target = 'Global' ORDER BY id ASC")
+		// Added id to the SELECT statement
+		rows, err = db.Query("SELECT id, sender, target, body, time, is_image FROM messages WHERE target = 'Global' ORDER BY id ASC")
 	} else {
-		// Added is_image to SELECT
+		// Added id to the SELECT statement
 		rows, err = db.Query(`
-			SELECT sender, target, body, time, is_image FROM messages 
+			SELECT id, sender, target, body, time, is_image FROM messages 
 			WHERE (sender = $1 AND target = $2) OR (sender = $2 AND target = $1)
 			ORDER BY id ASC`, username, target)
 	}
@@ -258,9 +287,15 @@ func loadSpecificHistory(conn *websocket.Conn, username string, target string) {
 
 	for rows.Next() {
 		var e Event
-		// Added e.IsImage to Scan
-		rows.Scan(&e.User, &e.Target, &e.Body, &e.Time, &e.IsImage)
+		// Added e.ID to Scan - it MUST be first because 'id' is first in the SELECT above
+		err := rows.Scan(&e.ID, &e.User, &e.Target, &e.Body, &e.Time, &e.IsImage)
+		if err != nil {
+			fmt.Println("Scan error in history:", err)
+			continue
+		}
+
 		e.Type = "message"
+		// Send each historical message (now including its ID) to the user's screen
 		conn.WriteJSON(e)
 	}
 }

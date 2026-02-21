@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | HarveyChatApp</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-blue: #5d68e2;
+            --dark-bg: #2c343f;
+            --light-gray: #f4f7fe;
+        }
+
+        body { 
+            margin: 0; 
+            font-family: 'Segoe UI', sans-serif; 
+            background: var(--light-gray); 
+            display: grid; 
+            place-items: center; 
+            height: 100vh; 
+        }
+
+        .login-card { 
+            background: white; 
+            padding: 40px; 
+            border-radius: 15px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05); 
+            width: 100%; 
+            max-width: 350px; 
+            text-align: center; 
+            transition: 0.3s;
+        }
+
+        .logo { 
+            font-size: 28px; 
+            font-weight: bold; 
+            color: var(--dark-bg); 
+            margin-bottom: 10px; 
+            letter-spacing: -1px;
+        }
+
+        .subtitle { 
+            color: #8e94a9; 
+            margin-bottom: 30px; 
+            font-size: 14px; 
+        }
+
+        .input-group { 
+            position: relative; 
+            margin-bottom: 20px; 
+        }
+
+        .input-group i { 
+            position: absolute; 
+            left: 15px; 
+            top: 50%; 
+            transform: translateY(-50%); 
+            color: var(--primary-blue); 
+        }
+
+        input { 
+            width: 100%; 
+            padding: 14px 15px 14px 45px; 
+            border: 1px solid #e0e0e0; 
+            border-radius: 10px; 
+            outline: none; 
+            box-sizing: border-box; 
+            font-size: 16px;
+            transition: 0.3s; 
+        }
+
+        input:focus { 
+            border-color: var(--primary-blue); 
+            box-shadow: 0 0 0 4px rgba(93, 104, 226, 0.1); 
+        }
+
+        button { 
+            width: 100%; 
+            padding: 14px; 
+            background: var(--primary-blue); 
+            color: white; 
+            border: none; 
+            border-radius: 10px; 
+            cursor: pointer; 
+            font-weight: bold; 
+            font-size: 16px; 
+            transition: 0.3s; 
+        }
+
+        button:hover { 
+            background: #4a55c7; 
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(93, 104, 226, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="logo">HarveyChatApp</div>
+        <div class="subtitle">Enter your name to start chatting</div>
+        <form action="/login" method="POST">
+            <div class="input-group">
+                <i class="fas fa-user-circle"></i>
+                <input type="text" name="username" placeholder="Username" required autofocus>
+            </div>
+            <button type="submit">Join Room</button>
+        </form>
+    </div>
+</body>
+</html>
