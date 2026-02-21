@@ -109,6 +109,27 @@
     
     .message { max-width: 85%; } /* Make message bubbles wider on small screens */
 }
+
+/* Emoji Picker styling */
+.emoji-picker {
+    display: none;
+    position: absolute;
+    bottom: 80px;
+    left: 20px;
+    background: white;
+    border: 1px solid var(--border-color);
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    z-index: 1000;
+}
+.emoji-picker span { cursor: pointer; font-size: 20px; transition: 0.2s; }
+.emoji-picker span:hover { transform: scale(1.2); }
+
+/* Image message styling */
+.chat-img { max-width: 100%; border-radius: 8px; margin-top: 5px; cursor: pointer; }
     </style>
 </head>
 <div id="sidebar-overlay" onclick="toggleSidebar()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"></div>
@@ -161,10 +182,24 @@
     <div id="chat-box" class="messages">
         </div>
 
-    <div class="input-area">
-        <input type="text" id="msgInput" placeholder="Write a message..." onkeypress="handleKey(event)">
-        <button class="send-btn" onclick="sendMessage()">Send</button>
+    <div class="input-area" style="position: relative;">
+    <div id="emoji-picker" class="emoji-picker">
+        <span onclick="addEmoji('😊')">😊</span><span onclick="addEmoji('😂')">😂</span>
+        <span onclick="addEmoji('❤️')">❤️</span><span onclick="addEmoji('👍')">👍</span>
+        <span onclick="addEmoji('🔥')">🔥</span><span onclick="addEmoji('😮')">😮</span>
+        <span onclick="addEmoji('😢')">😢</span><span onclick="addEmoji('🎉')">🎉</span>
     </div>
+
+    <input type="file" id="imageInput" accept="image/*" style="display:none" onchange="sendImage(this)">
+    <button onclick="document.getElementById('imageInput').click()" style="background:none; border:none; color:var(--text-gray); font-size:20px; cursor:pointer;">
+        <i class="fas fa-image"></i>
+    </button>
+    
+    <button onclick="toggleEmojiPicker()" style="background:none; border:none; font-size:20px; cursor:pointer;">😊</button>
+
+    <input type="text" id="msgInput" placeholder="Write a message..." onkeypress="handleKey(event)">
+    <button class="send-btn" onclick="sendMessage()">Send</button>
+</div>
 </div>
 
     <script>
@@ -173,6 +208,35 @@
     const overlay = document.getElementById('sidebar-overlay');
     sidebar.classList.toggle('active');
     overlay.style.display = sidebar.classList.contains('active') ? 'block' : 'none';
+} 
+
+function toggleEmojiPicker() {
+    const picker = document.getElementById('emoji-picker');
+    picker.style.display = picker.style.display === 'grid' ? 'none' : 'grid';
+}
+
+function addEmoji(emoji) {
+    const input = document.getElementById('msgInput');
+    input.value += emoji;
+    input.focus();
+    toggleEmojiPicker();
+}
+
+function sendImage(input) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const messageData = {
+                type: "message",
+                target: currentChatTarget,
+                body: e.target.result, // The Base64 string
+                is_image: true 
+            };
+            socket.send(JSON.stringify(messageData));
+        };
+        reader.readAsDataURL(input.files[0]);
+        input.value = ""; // Reset input
+    }
 }
 
         let currentChatTarget = "Global"; // Default to the main room
@@ -216,7 +280,10 @@ let socket = new WebSocket(protocol + window.location.host + "/ws");
             msgDiv.className = isMe ? "message msg-sent" : "message msg-received";
             msgDiv.innerHTML = `
                 <span class="msg-author">${isMe ? "You" : data.user}</span>
-                <div class="msg-body">${data.body}</div>
+                ${data.is_image ? 
+    `<img src="${data.body}" class="chat-img" onclick="window.open(this.src)">` : 
+    `<div class="msg-body">${data.body}</div>`
+}
                 <div style="font-size: 10px; opacity: 0.6; margin-top: 4px; text-align: right;">
                     ${data.time}
                 </div>

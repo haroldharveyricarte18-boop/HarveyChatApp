@@ -15,12 +15,13 @@ import (
 )
 
 type Event struct {
-	Type   string   `json:"type"`
-	User   string   `json:"user"`
-	Target string   `json:"target"`
-	Body   string   `json:"body"`
-	List   []string `json:"list"`
-	Time   string   `json:"time"`
+	Type    string   `json:"type"`
+	User    string   `json:"user"`
+	Target  string   `json:"target"`
+	Body    string   `json:"body"`
+	List    []string `json:"list"`
+	Time    string   `json:"time"`
+	IsImage bool     `json:"is_image"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -49,13 +50,14 @@ func main() {
 		return
 	}
 
-	// Create messages table if it doesn't exist
+	// Added is_image column to the table
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS messages (
 		id SERIAL PRIMARY KEY,
 		sender TEXT,
 		target TEXT,
 		body TEXT,
-		time TEXT
+		time TEXT,
+		is_image BOOLEAN DEFAULT FALSE
 	)`)
 	if err != nil {
 		fmt.Println("Error creating table:", err)
@@ -157,13 +159,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Helper to save message to PostgreSQL
 func saveMessage(e Event) {
 	if e.Type != "message" {
 		return
 	}
-	_, err := db.Exec("INSERT INTO messages (sender, target, body, time) VALUES ($1, $2, $3, $4)",
-		e.User, e.Target, e.Body, e.Time)
+	// Added is_image to the INSERT statement
+	_, err := db.Exec("INSERT INTO messages (sender, target, body, time, is_image) VALUES ($1, $2, $3, $4, $5)",
+		e.User, e.Target, e.Body, e.Time, e.IsImage)
 	if err != nil {
 		fmt.Println("Save error:", err)
 	}
@@ -238,12 +240,12 @@ func loadSpecificHistory(conn *websocket.Conn, username string, target string) {
 	var err error
 
 	if target == "Global" {
-		// Fetch messages sent to everyone
-		rows, err = db.Query("SELECT sender, target, body, time FROM messages WHERE target = 'Global' ORDER BY id ASC")
+		// Added is_image to SELECT
+		rows, err = db.Query("SELECT sender, target, body, time, is_image FROM messages WHERE target = 'Global' ORDER BY id ASC")
 	} else {
-		// Fetch private messages between you and this specific target
+		// Added is_image to SELECT
 		rows, err = db.Query(`
-			SELECT sender, target, body, time FROM messages 
+			SELECT sender, target, body, time, is_image FROM messages 
 			WHERE (sender = $1 AND target = $2) OR (sender = $2 AND target = $1)
 			ORDER BY id ASC`, username, target)
 	}
@@ -256,9 +258,9 @@ func loadSpecificHistory(conn *websocket.Conn, username string, target string) {
 
 	for rows.Next() {
 		var e Event
-		rows.Scan(&e.User, &e.Target, &e.Body, &e.Time)
+		// Added e.IsImage to Scan
+		rows.Scan(&e.User, &e.Target, &e.Body, &e.Time, &e.IsImage)
 		e.Type = "message"
-		// Send each historical message back to the user's screen
 		conn.WriteJSON(e)
 	}
 }
