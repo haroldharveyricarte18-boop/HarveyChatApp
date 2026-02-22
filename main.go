@@ -23,6 +23,7 @@ type Event struct {
 	Time    string   `json:"time"`
 	IsImage bool     `json:"is_image"`
 	ID      int      `json:"id"`
+	IsRead  bool     `json:"is_read"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -58,8 +59,10 @@ func main() {
 		target TEXT,
 		body TEXT,
 		time TEXT,
-		is_image BOOLEAN DEFAULT FALSE
+		is_image BOOLEAN DEFAULT FALSE,
+		is_read BOOLEAN DEFAULT FALSE
 	)`)
+
 	if err != nil {
 		fmt.Println("Error creating table:", err)
 	}
@@ -162,6 +165,23 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				broadcastMessage(Event{Type: "message_deleted", ID: event.ID})
 			} else {
 				fmt.Println("Delete SQL error:", err)
+			}
+			continue
+		}
+
+		// 2.5 Handle Typing Signals (Broadcast to others)
+		if event.Type == "typing" || event.Type == "stop_typing" {
+			event.User = username
+			if event.Target != "" && event.Target != "Global" {
+				// Only send typing status to the specific person you are chatting with
+				mutex.Lock()
+				if targetConn, ok := clients[event.Target]; ok {
+					targetConn.WriteJSON(event)
+				}
+				mutex.Unlock()
+			} else {
+				// Send typing status to everyone in Global Chat
+				broadcastMessage(event)
 			}
 			continue
 		}
@@ -297,5 +317,10 @@ func loadSpecificHistory(conn *websocket.Conn, username string, target string) {
 		e.Type = "message"
 		// Send each historical message (now including its ID) to the user's screen
 		conn.WriteJSON(e)
+	}
+
+	// Mark messages as read once they are loaded/seen
+	if target != "Global" {
+		db.Exec("UPDATE messages SET is_read = true WHERE sender = $1 AND target = $2", target, username)
 	}
 }

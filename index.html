@@ -134,6 +134,9 @@
 </head>
 <div id="sidebar-overlay" onclick="toggleSidebar()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"></div>
 <body>
+    <audio id="sendSound" src="https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3"></audio>
+<audio id="receiveSound" src="https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3"></audio>
+<audio id="deleteSound" src="https://assets.mixkit.co/active_storage/sfx/2360/2360-preview.mp3"></audio>
 
     <div class="sidebar">
         <div class="sidebar-header">HarveyChatApp</div>
@@ -181,6 +184,7 @@
 
     <div id="chat-box" class="messages">
         </div>
+        <div id="typing-indicator" style="font-size: 11px; color: #8e94a9; padding: 5px 25px; height: 20px; font-style: italic;"></div>
 
     <div class="input-area" style="position: relative;">
     <div id="emoji-picker" class="emoji-picker">
@@ -263,57 +267,70 @@ document.getElementById("myAvatar").src = `https://ui-avatars.com/api/?name=${cu
 let socket = new WebSocket(protocol + window.location.host + "/ws");
 
     socket.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    const chatBox = document.getElementById("chat-box");
+        const data = JSON.parse(event.data);
+        const chatBox = document.getElementById("chat-box");
+        const typingDiv = document.getElementById("typing-indicator");
 
-    if (data.type === "users") {
-        updateUserList(data.list);
-    } 
-    // --- NEW: Handle message deletion signal ---
-    else if (data.type === "message_deleted") {
-        const el = document.querySelector(`[data-id="${data.id}"]`);
-        if (el) {
-            el.style.opacity = "0"; // Smooth fade out
-            setTimeout(() => el.remove(), 300);
+        if (data.type === "users") {
+            updateUserList(data.list);
+        } 
+        // 1. Handle Typing Indicator
+        else if (data.type === "typing" && data.user !== currentUsername) {
+            typingDiv.innerText = `${data.user} is typing...`;
+        } 
+        else if (data.type === "stop_typing") {
+            typingDiv.innerText = "";
         }
-    } 
-    else if (data.type === "message") {
-        const isGlobal = data.target === "Global" || !data.target;
-        
-        const isRelevant = (isGlobal && currentChatTarget === "Global") || 
-                           (data.user === currentChatTarget && data.target === currentUsername) || 
-                           (data.user === currentUsername && data.target === currentChatTarget);
+        // 2. Handle Deletion (Added sound here)
+        else if (data.type === "message_deleted") {
+            const el = document.querySelector(`[data-id="${data.id}"]`);
+            if (el) {
+                document.getElementById("deleteSound").play(); // Play sound
+                el.style.opacity = "0";
+                setTimeout(() => el.remove(), 300);
+            }
+        } 
+        // 3. Handle Messages (Added sound and read receipts)
+        else if (data.type === "message") {
+            const isGlobal = data.target === "Global" || !data.target;
+            const isRelevant = (isGlobal && currentChatTarget === "Global") || 
+                               (data.user === currentChatTarget && data.target === currentUsername) || 
+                               (data.user === currentUsername && data.target === currentChatTarget);
 
-        if (isRelevant) {
-            let msgDiv = document.createElement("div");
-            const isMe = data.user === currentUsername;
-            
-            // 1. Assign the database ID to the HTML element
-            msgDiv.setAttribute("data-id", data.id);
-            
-            msgDiv.className = isMe ? "message msg-sent" : "message msg-received";
-            
-            // 2. Add the Trash Icon ONLY if isMe is true
-            const deleteBtn = isMe ? 
-                `<i class="fas fa-trash-alt" style="cursor:pointer; margin-left:8px; color:#ff4d4d; font-size:12px;" onclick="confirmDelete(${data.id})"></i>` : '';
+            if (isRelevant) {
+                let msgDiv = document.createElement("div");
+                const isMe = data.user === currentUsername;
+                
+                // Play receive sound if it's not from me
+                if (!isMe) document.getElementById("receiveSound").play();
 
-            msgDiv.innerHTML = `
-                <span class="msg-author">${isMe ? "You" : data.user}</span>
-                ${data.is_image ? 
-                    `<img src="${data.body}" class="chat-img" onclick="window.open(this.src)">` : 
-                    `<div class="msg-body">${data.body}</div>`
-                }
-                <div style="display: flex; justify-content: flex-end; align-items: center; font-size: 10px; opacity: 0.6; margin-top: 4px;">
-                    ${data.time}
-                    ${deleteBtn}
-                </div>
-            `;
+                msgDiv.setAttribute("data-id", data.id);
+                msgDiv.className = isMe ? "message msg-sent" : "message msg-received";
+                
+                const deleteBtn = isMe ? 
+                    `<i class="fas fa-trash-alt" style="cursor:pointer; margin-left:8px; color:#ff4d4d; font-size:12px;" onclick="confirmDelete(${data.id})"></i>` : '';
 
-            chatBox.appendChild(msgDiv);
-            chatBox.scrollTop = chatBox.scrollHeight;
+                // ADDED: Read Receipt Checkmark (Double check)
+                const checkMark = isMe ? `<i class="fas fa-check-double" style="margin-left:5px; color:#5d68e2;"></i>` : '';
+
+                msgDiv.innerHTML = `
+                    <span class="msg-author">${isMe ? "You" : data.user}</span>
+                    ${data.is_image ? 
+                        `<img src="${data.body}" class="chat-img" onclick="window.open(this.src)">` : 
+                        `<div class="msg-body">${data.body}</div>`
+                    }
+                    <div style="display: flex; justify-content: flex-end; align-items: center; font-size: 10px; opacity: 0.6; margin-top: 4px;">
+                        ${data.time}
+                        ${checkMark}
+                        ${deleteBtn}
+                    </div>
+                `;
+
+                chatBox.appendChild(msgDiv);
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
         }
-    }
-};
+    };
 
         function updateUserList(users) {
     const listDiv = document.getElementById("user-list");
@@ -354,6 +371,9 @@ function switchChat(target) {
        function sendMessage() {
     let input = document.getElementById("msgInput");
     if(input.value.trim() !== "") {
+        // Play the "Send" sound effect immediately
+        document.getElementById("sendSound").play(); 
+
         const messageData = {
             type: "message",
             target: currentChatTarget, // This sends it to the person you clicked
@@ -361,8 +381,36 @@ function switchChat(target) {
         };
         socket.send(JSON.stringify(messageData));
         input.value = "";
+        
+        // Also send a "stop_typing" signal immediately after sending
+        socket.send(JSON.stringify({ 
+            type: "stop_typing", 
+            user: currentUsername, 
+            target: currentChatTarget 
+        }));
     }
 }
+
+// Typing Indicator Logic
+    let typingTimeout;
+    document.getElementById("msgInput").addEventListener("input", () => {
+        // Send typing signal to server
+        socket.send(JSON.stringify({ 
+            type: "typing", 
+            user: currentUsername, 
+            target: currentChatTarget 
+        }));
+        
+        // Stop the "typing" status after 2 seconds of no input
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => {
+            socket.send(JSON.stringify({ 
+                type: "stop_typing", 
+                user: currentUsername, 
+                target: currentChatTarget 
+            }));
+        }, 2000);
+    });
 
         function handleKey(e) {
             if (e.key === 'Enter') sendMessage();
