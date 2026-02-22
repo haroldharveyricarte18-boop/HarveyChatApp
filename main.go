@@ -169,6 +169,16 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		if event.Type == "clear_history" {
+			if event.Target == "Global" {
+				db.Exec("DELETE FROM messages WHERE target = 'Global'")
+			} else {
+				db.Exec("DELETE FROM messages WHERE (sender = $1 AND target = $2) OR (sender = $2 AND target = $1)", username, event.Target)
+			}
+			// Optional: broadcast a signal to the other user to clear their screen too
+			continue
+		}
+
 		// 2.5 Handle Typing Signals (Broadcast to others)
 		if event.Type == "typing" || event.Type == "stop_typing" {
 			event.User = username

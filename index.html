@@ -14,7 +14,7 @@
             --border-color: #e0e0e0;
         }
 
-        body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; background: var(--bg-light); overflow: hidden; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; height: 100dvh; background: var(--bg-light); overflow: hidden; position: fixed; width: 100%; }
         
         /* Main Sidebar */
         .sidebar { width: 260px; background: var(--sidebar-bg); color: white; display: flex; flex-direction: column; flex-shrink: 0; }
@@ -40,12 +40,13 @@
         .active-user-item img { width: 35px; height: 35px; border-radius: 50%; }
 
         /* Main Chat Area (Right Panel) */
-        .main-chat { 
+       .main-chat { 
     display: flex; 
     flex-direction: column; 
     background: white; 
-    height: 100vh; /* Keeps the chat at full screen height */
+    height: 100dvh; 
     overflow: hidden; 
+    position: relative;
 }
         .chat-header { padding: 15px 25px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; }
         
@@ -65,12 +66,13 @@
         .msg-author { font-size: 10px; margin-bottom: 4px; display: block; opacity: 0.8; }
 
         .input-area { 
-    padding: 20px; 
+    padding: 10px 15px; 
     border-top: 1px solid var(--border-color); 
     display: flex; 
     gap: 10px; 
     background: white; 
-    flex-shrink: 0; /* Prevents the input bar from being squeezed out */
+    flex-shrink: 0; 
+    padding-bottom: calc(10px + env(safe-area-inset-bottom)); 
 }
         input { flex: 1; padding: 12px 15px; border: 1px solid #ddd; border-radius: 8px; outline: none; }
         input:focus { border-color: var(--active-blue); }
@@ -86,28 +88,36 @@
 
 /* Mobile Responsive Styles */
 @media (max-width: 768px) {
-    #menu-toggle { display: block !important; } /* Show hamburger on mobile */
+    #menu-toggle { display: block !important; }
 
     .sidebar {
         position: fixed;
-        left: -260px; /* Hide sidebar off-screen */
+        left: -260px;
         top: 0;
-        height: 100%;
-        z-index: 1000;
-        transition: 0.3s;
+        height: 100dvh;
+        z-index: 1001; 
+        transition: 0.3s ease-in-out;
     }
 
-    .sidebar.active { left: 0; } /* Slide sidebar in when active */
+    .sidebar.active { left: 0; }
 
     .chat-container {
-        grid-template-columns: 1fr; /* Stack layout: hide conversation list */
+        grid-template-columns: 1fr;
+        height: 100dvh;
     }
 
     .conv-list {
-        display: none; /* Hide the user list panel on mobile to save space */
+        display: none; 
     }
     
-    .message { max-width: 85%; } /* Make message bubbles wider on small screens */
+    .message { max-width: 85%; }
+
+    /* Fix for the emoji picker on small screens */
+    .emoji-picker {
+        width: 80%;
+        left: 10%;
+        bottom: 70px;
+    }
 }
 
 /* Emoji Picker styling */
@@ -130,6 +140,23 @@
 
 /* Image message styling */
 .chat-img { max-width: 100%; border-radius: 8px; margin-top: 5px; cursor: pointer; }
+
+.online-pulse {
+    width: 10px;
+    height: 10px;
+    background: #28a745;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 5px;
+    box-shadow: 0 0 0 rgba(40, 167, 69, 0.4);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+}
     </style>
 </head>
 <div id="sidebar-overlay" onclick="toggleSidebar()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"></div>
@@ -177,8 +204,9 @@
     </div>
         <div style="color: var(--text-gray); font-size: 18px;">
             <i class="fas fa-video" style="margin-right:15px; cursor:pointer;"></i>
-            <i class="fas fa-phone" style="margin-right:15px; cursor:pointer;"></i>
-            <i class="fas fa-ellipsis-v" style="cursor:pointer;"></i>
+<i class="fas fa-phone" style="margin-right:15px; cursor:pointer;"></i>
+<i class="fas fa-broom" style="margin-right:15px; cursor:pointer; color: #ff4d4d;" onclick="clearHistory()" title="Clear Chat"></i>
+<i class="fas fa-ellipsis-v" style="cursor:pointer;"></i>
         </div>
     </div>
 
@@ -327,7 +355,13 @@ let socket = new WebSocket(protocol + window.location.host + "/ws");
                 `;
 
                 chatBox.appendChild(msgDiv);
-                chatBox.scrollTop = chatBox.scrollHeight;
+                const isScrolledToBottom = chatBox.scrollHeight - chatBox.clientHeight <= chatBox.scrollTop + 100;
+if (isScrolledToBottom || isMe) {
+    chatBox.scrollTo({
+        top: chatBox.scrollHeight,
+        behavior: 'smooth'
+    });
+}
             }
         }
     };
@@ -349,7 +383,7 @@ let socket = new WebSocket(protocol + window.location.host + "/ws");
         userItem.className = "active-user-item";
         userItem.innerHTML = `
             <img src="https://ui-avatars.com/api/?name=${user}&background=random" alt="">
-            <div><strong>${user}</strong><br><small style="color:#28a745">Online</small></div>
+            <div><strong>${user}</strong><br><small style="color:#28a745"><span class="online-pulse"></span>Active Now</small></div>
         `;
         userItem.onclick = () => switchChat(user);
         listDiv.appendChild(userItem);
@@ -436,6 +470,16 @@ function confirmDelete(messageId) {
             type: "delete_message",
             id: parseInt(messageId)
         }));
+    }
+}
+
+function clearHistory() {
+    if (confirm(`Are you sure you want to clear all messages with ${currentChatTarget}?`)) {
+        socket.send(JSON.stringify({
+            type: "clear_history",
+            target: currentChatTarget
+        }));
+        document.getElementById("chat-box").innerHTML = ""; // Clear screen immediately
     }
 }
     </script>
