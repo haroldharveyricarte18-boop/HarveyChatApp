@@ -180,10 +180,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		if event.Type == "clear_history" {
 			if event.Target == "Global" {
 				db.Exec("DELETE FROM messages WHERE target = 'Global'")
+				broadcastMessage(Event{Type: "clear_chat_ui", Target: "Global"})
 			} else {
 				db.Exec("DELETE FROM messages WHERE (sender = $1 AND target = $2) OR (sender = $2 AND target = $1)", username, event.Target)
+				// Tell both users involved to clear their screen
+				sendPrivateMessage(Event{Type: "clear_chat_ui", Target: event.Target, User: username})
 			}
-			// Optional: broadcast a signal to the other user to clear their screen too
 			continue
 		}
 
@@ -207,7 +209,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		// 3. Handle Regular Messages
 		if event.Type == "message" {
 			event.User = username
-			event.Time = time.Now().Format("3:04 PM")
+
+			// Load PH Timezone
+			loc, _ := time.LoadLocation("Asia/Manila")
+			event.Time = time.Now().In(loc).Format("3:04 PM")
 
 			// Save message and retrieve its new database ID
 			saveMessage(&event)
@@ -234,31 +239,6 @@ func saveMessage(e *Event) {
 
 	if err != nil {
 		fmt.Println("Save error:", err)
-	}
-}
-
-// Helper to load last 50 relevant messages
-func loadChatHistory(conn *websocket.Conn, username string) {
-	// Query messages that are Global OR involve this user
-	rows, err := db.Query(`
-		SELECT sender, target, body, time 
-		FROM messages 
-		WHERE target = 'Global' 
-		OR target = $1 
-		OR sender = $1 
-		ORDER BY id ASC LIMIT 100`, username)
-
-	if err != nil {
-		fmt.Println("Load history error:", err)
-		return
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var e Event
-		rows.Scan(&e.User, &e.Target, &e.Body, &e.Time)
-		e.Type = "message"
-		conn.WriteJSON(e)
 	}
 }
 
