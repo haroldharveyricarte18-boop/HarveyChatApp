@@ -8,30 +8,34 @@
     <style>
         :root {
             --primary-blue: #5d68e2;
+            --secondary-green: #28a745;
             --dark-bg: #2c343f;
             --light-gray: #f4f7fe;
+            --error-red: #e74c3c;
         }
 
         body { 
-            margin: 0; 
-            font-family: 'Segoe UI', sans-serif; 
-            background: var(--light-gray); 
-            display: grid; 
-            place-items: center; 
-            height: 100vh; 
-        }
+    margin: 0; 
+    font-family: 'Segoe UI', sans-serif; 
+    background: var(--light-gray); 
+    display: flex; /* Changed from grid to flex for better height handling */
+    align-items: center; 
+    justify-content: center; 
+    min-height: 100dvh; /* Uses dynamic viewport height for mobile browsers */
+    padding: 20px; /* Ensures the card doesn't touch the screen edges */
+    box-sizing: border-box;
+}
 
-        .login-card { 
-            background: white; 
-            padding: 40px; 
-            border-radius: 15px; 
-            box-shadow: 0 10px 25px rgba(0,0,0,0.05); 
-            width: 100%; 
-            max-width: 350px; 
-            text-align: center; 
-            transition: 0.3s;
-        }
-
+.login-card { 
+    background: white; 
+    padding: 30px; /* Reduced padding for mobile */
+    border-radius: 15px; 
+    box-shadow: 0 10px 25px rgba(0,0,0,0.05); 
+    width: 100%; 
+    max-width: 400px; /* Slightly wider max-width */
+    text-align: center; 
+    box-sizing: border-box; /* Crucial for padding to not break width */
+}
         .logo { 
             font-size: 28px; 
             font-weight: bold; 
@@ -42,13 +46,23 @@
 
         .subtitle { 
             color: #8e94a9; 
-            margin-bottom: 30px; 
+            margin-bottom: 20px; 
             font-size: 14px; 
+        }
+
+        .error-msg {
+            color: var(--error-red);
+            font-size: 13px;
+            margin-bottom: 15px;
+            background: #fdf2f2;
+            padding: 8px;
+            border-radius: 5px;
+            display: none; /* Hidden by default */
         }
 
         .input-group { 
             position: relative; 
-            margin-bottom: 20px; 
+            margin-bottom: 15px; 
         }
 
         .input-group i { 
@@ -75,10 +89,31 @@
             box-shadow: 0 0 0 4px rgba(93, 104, 226, 0.1); 
         }
 
+       .btn-container {
+    display: flex;
+    flex-direction: row; /* Desktop view: buttons side-by-side */
+    gap: 10px;
+    margin-top: 15px;
+}
+
+/* Mobile Tweak: Stack buttons vertically on small screens */
+@media (max-width: 480px) {
+    .btn-container {
+        flex-direction: column;
+    }
+    
+    .login-card {
+        padding: 25px 20px; /* Even smaller padding on tiny screens */
+    }
+
+    .logo {
+        font-size: 24px;
+    }
+}
+
         button { 
             width: 100%; 
             padding: 14px; 
-            background: var(--primary-blue); 
             color: white; 
             border: none; 
             border-radius: 10px; 
@@ -88,24 +123,67 @@
             transition: 0.3s; 
         }
 
-        button:hover { 
+        .btn-login {
+            background: var(--primary-blue); 
+        }
+
+        .btn-login:hover { 
             background: #4a55c7; 
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(93, 104, 226, 0.3);
+        }
+
+        .btn-register {
+            background: var(--secondary-green);
+        }
+
+        .btn-register:hover {
+            background: #218838;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.3);
         }
     </style>
 </head>
 <body>
     <div class="login-card">
         <div class="logo">HarveyChatApp</div>
-        <div class="subtitle">Enter your name to start chatting</div>
+        <div class="subtitle">Secure login for permanent accounts</div>
+
+        <div id="errorBox" class="error-msg"></div>
+
         <form action="/login" method="POST">
             <div class="input-group">
                 <i class="fas fa-user-circle"></i>
                 <input type="text" name="username" placeholder="Username" required autofocus>
             </div>
-            <button type="submit">Join Room</button>
+            
+            <div class="input-group">
+                <i class="fas fa-lock"></i>
+                <input type="password" name="password" placeholder="Password" required>
+            </div>
+
+            <div class="btn-container">
+                <button type="submit" name="action" value="login" class="btn-login">Login</button>
+                <button type="submit" name="action" value="register" class="btn-register">Create Account</button>
+            </div>
         </form>
     </div>
+
+    <script>
+        // Check for error parameters in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const errorBox = document.getElementById('errorBox');
+
+        if (urlParams.has('error')) {
+            errorBox.style.display = 'block';
+            const errorType = urlParams.get('error');
+            
+            if (errorType === 'invalid') {
+                errorBox.innerText = "Invalid username or password.";
+            } else if (errorType === 'exists') {
+                errorBox.innerText = "Username already taken!";
+            }
+        }
+    </script>
 </body>
 </html>

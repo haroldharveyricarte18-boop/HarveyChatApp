@@ -73,11 +73,25 @@ func main() {
 		fmt.Println("Error creating table:", err)
 	}
 
+	// Create Users Table for permanent accounts
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS users (
+		id SERIAL PRIMARY KEY,
+		username TEXT UNIQUE NOT NULL,
+		password TEXT NOT NULL,
+		avatar TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	)`)
+
+	if err != nil {
+		fmt.Println("Error creating users table:", err)
+	}
+
 	db.Exec("ALTER TABLE messages ADD COLUMN IF NOT EXISTS user_avatar TEXT")
 
 	http.HandleFunc("/", homeHandler)
 	http.HandleFunc("/ws", wsHandler)
 	http.HandleFunc("/login", loginHandler)
+	http.HandleFunc("/logout", logoutHandler)
 
 	fmt.Println("Server running on http://localhost:8080")
 	http.ListenAndServe(":8080", nil)
@@ -100,24 +114,59 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
-	// If they are just visiting the page (GET), show the file
 	if r.Method == http.MethodGet {
 		http.ServeFile(w, r, "login.html")
 		return
 	}
 
-	// If they are submitting the form (POST), set the cookie
 	if r.Method == http.MethodPost {
+		action := r.FormValue("action") // Sent by the button clicked
 		username := r.FormValue("username")
+		password := r.FormValue("password")
+
+		if action == "register" {
+			// Try to insert new user
+			_, err := db.Exec("INSERT INTO users (username, password) VALUES ($1, $2)", username, password)
+			if err != nil {
+				// If error, likely username is taken
+				http.Redirect(w, r, "/login?error=exists", http.StatusSeeOther)
+				return
+			}
+		} else {
+			// Login logic: Check if user exists and password matches
+			var dbPassword string
+			err := db.QueryRow("SELECT password FROM users WHERE username = $1", username).Scan(&dbPassword)
+			if err != nil || dbPassword != password {
+				// If error or password mismatch, reject
+				http.Redirect(w, r, "/login?error=invalid", http.StatusSeeOther)
+				return
+			}
+		}
+
+		// If we reach here, either Registration or Login was successful
 		http.SetCookie(w, &http.Cookie{
 			Name:     "username",
 			Value:    username,
-			Expires:  time.Now().Add(24 * time.Hour),
+			Expires:  time.Now().Add(30 * 24 * time.Hour), // Lasts 30 days
 			HttpOnly: false,
 			Path:     "/",
 		})
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}
+}
+
+func logoutHandler(w http.ResponseWriter, r *http.Request) {
+	// We clear the cookie by setting its MaxAge to -1 (immediate deletion)
+	http.SetCookie(w, &http.Cookie{
+		Name:     "username",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+		HttpOnly: false,
+	})
+	// Redirect them back to the login page
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -273,7 +322,7 @@ func broadcastUserList() {
 
 		// Look up the most recent avatar for this specific user in the database
 		// We use COALESCE so it doesn't error out if they've never sent a message
-		err := db.QueryRow("SELECT COALESCE(user_avatar, '') FROM messages WHERE sender = $1 ORDER BY id DESC LIMIT 1", name).Scan(&avatar)
+		err := db.QueryRow("SELECT COALESCE(avatar, '') FROM users WHERE username = $1", name).Scan(&avatar)
 
 		if err != nil {
 			avatar = "" // No history found for this user, use empty string

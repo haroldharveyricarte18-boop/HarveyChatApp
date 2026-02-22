@@ -627,17 +627,14 @@ function switchChat(target) {
             if (e.key === 'Enter') sendMessage();
         }
 
-        function logout() {
-    // 1. Kill the cookie for the whole site
-    document.cookie = "username=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-    
-    // 2. Clear session storage just in case
-    sessionStorage.clear();
-    localStorage.clear();
+      function logout() {
+    // This calls the new /logout route we added to main.go
+    // It is more secure because the server handles the cookie destruction
+    window.location.href = "/logout";
 
-    // 3. Force a hard redirect to the home page
-    // Using window.location.replace is better because it doesn't keep the dashboard in history
-    window.location.replace("/"); 
+    // Optional: Clear local storage so the next user doesn't see your 
+    // old chat theme or cached avatars
+    localStorage.clear();
 }
 
        // --- Helper function to send delete request to Go server ---
