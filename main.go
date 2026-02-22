@@ -322,7 +322,7 @@ func broadcastUserList() {
 
 		// Look up the most recent avatar for this specific user in the database
 		// We use COALESCE so it doesn't error out if they've never sent a message
-		err := db.QueryRow("SELECT COALESCE(avatar, '') FROM users WHERE username = $1", name).Scan(&avatar)
+		err := db.QueryRow("SELECT COALESCE(user_avatar, '') FROM messages WHERE sender = $1 ORDER BY id DESC LIMIT 1", name).Scan(&avatar)
 
 		if err != nil {
 			avatar = "" // No history found for this user, use empty string
