@@ -213,12 +213,21 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// 2. Handle Delete Requests (Must be independent of message type)
+		if event.Type == "update_avatar" {
+			// Update the permanent profile
+			db.Exec("UPDATE users SET avatar = $1 WHERE username = $2", event.Body, username)
+
+			// ALSO update all previous messages so your old chats show the new pic
+			db.Exec("UPDATE messages SET user_avatar = $1 WHERE sender = $2", event.Body, username)
+
+			broadcastUserList()
+			continue
+		}
+
+		// 3. Handle Delete Requests
 		if event.Type == "delete_message" {
-			// Removes message from database only if sender matches current user
 			_, err := db.Exec("DELETE FROM messages WHERE id = $1 AND sender = $2", event.ID, username)
 			if err == nil {
-				// Broadcast signal to all users to remove message from UI
 				broadcastMessage(Event{Type: "message_deleted", ID: event.ID})
 			} else {
 				fmt.Println("Delete SQL error:", err)
@@ -226,36 +235,34 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		// 4. Handle Clear History
 		if event.Type == "clear_history" {
 			if event.Target == "Global" {
 				db.Exec("DELETE FROM messages WHERE target = 'Global'")
 				broadcastMessage(Event{Type: "clear_chat_ui", Target: "Global"})
 			} else {
 				db.Exec("DELETE FROM messages WHERE (sender = $1 AND target = $2) OR (sender = $2 AND target = $1)", username, event.Target)
-				// Tell both users involved to clear their screen
 				sendPrivateMessage(Event{Type: "clear_chat_ui", Target: event.Target, User: username})
 			}
 			continue
 		}
 
-		// 2.5 Handle Typing Signals (Broadcast to others)
+		// 5. Handle Typing Signals
 		if event.Type == "typing" || event.Type == "stop_typing" {
 			event.User = username
 			if event.Target != "" && event.Target != "Global" {
-				// Only send typing status to the specific person you are chatting with
 				mutex.Lock()
 				if targetConn, ok := clients[event.Target]; ok {
 					targetConn.WriteJSON(event)
 				}
 				mutex.Unlock()
 			} else {
-				// Send typing status to everyone in Global Chat
 				broadcastMessage(event)
 			}
 			continue
 		}
 
-		// 3. Handle Regular Messages
+		// 6. Handle Regular Messages
 		if event.Type == "message" {
 			event.User = username
 
@@ -315,27 +322,31 @@ func sendPrivateMessage(event Event) {
 func broadcastUserList() {
 	var userInfoList []UserInfo
 
-	mutex.Lock()
-	// We iterate through all currently connected clients
-	for name := range clients {
-		var avatar string
+	// 1. Get ALL users and their permanent avatars from the users table
+	rows, err := db.Query("SELECT username, COALESCE(avatar, '') FROM users")
+	if err != nil {
+		fmt.Println("Error fetching user list:", err)
+		return
+	}
+	defer rows.Close()
 
-		// Look up the most recent avatar for this specific user in the database
-		// We use COALESCE so it doesn't error out if they've never sent a message
-		err := db.QueryRow("SELECT COALESCE(user_avatar, '') FROM messages WHERE sender = $1 ORDER BY id DESC LIMIT 1", name).Scan(&avatar)
-
-		if err != nil {
-			avatar = "" // No history found for this user, use empty string
+	for rows.Next() {
+		var ui UserInfo
+		if err := rows.Scan(&ui.Username, &ui.Avatar); err != nil {
+			continue
 		}
 
-		userInfoList = append(userInfoList, UserInfo{
-			Username: name,
-			Avatar:   avatar,
-		})
-	}
-	mutex.Unlock()
+		// 2. Check if the user is currently online (in our clients map)
+		mutex.Lock()
+		_, isOnline := clients[ui.Username]
+		mutex.Unlock()
 
-	// We use a map here so we don't have to change your main Event struct too much
+		// Only show online users in the "Active Now" list
+		if isOnline {
+			userInfoList = append(userInfoList, ui)
+		}
+	}
+
 	event := map[string]interface{}{
 		"type":           "users",
 		"user_info_list": userInfoList,

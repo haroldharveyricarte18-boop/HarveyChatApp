@@ -411,12 +411,23 @@ document.getElementById("myAvatar").src = getCurrentAvatar(currentUsername);
         const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
 let socket = new WebSocket(protocol + window.location.host + "/ws");
 
-   socket.onmessage = function(event) {
+  socket.onmessage = function(event) {
     const data = JSON.parse(event.data);
     const chatBox = document.getElementById("chat-box");
     const typingDiv = document.getElementById("typing-indicator");
 
     if (data.type === "users") {
+        // --- PROFILE SYNC LOGIC ---
+        // Find YOUR profile in the list sent by the server
+        const myProfile = data.user_info_list.find(u => u.username === currentUsername);
+        
+        if (myProfile && myProfile.avatar) {
+            // Update your sidebar avatar immediately from the DB
+            document.getElementById("myAvatar").src = myProfile.avatar;
+            // Update localStorage so it persists even if the socket drops
+            localStorage.setItem("userAvatar_" + currentUsername, myProfile.avatar);
+        }
+
         // We pass the whole 'data' object because it now contains 'user_info_list'
         updateUserList(data);
     }
@@ -457,7 +468,7 @@ let socket = new WebSocket(protocol + window.location.host + "/ws");
 
             const checkMark = isMe ? `<i class="fas fa-check-double" style="margin-left:5px; color:#5d68e2;"></i>` : '';
 
-            // --- AVATAR LOGIC ---
+            // --- AVATAR LOGIC FOR MESSAGES ---
             const avatarSrc = data.user_avatar || `https://ui-avatars.com/api/?name=${data.user}&background=random`;
             
             if (data.user_avatar) {
@@ -495,7 +506,6 @@ let socket = new WebSocket(protocol + window.location.host + "/ws");
         }
 
         // --- NOTIFICATION BADGE LOGIC ---
-        // Triggered even if the chat isn't "relevant" (i.e., you're in Global but Harold DMs you)
         if (data.target !== "Global" && data.target && data.user !== currentUsername) {
             if (currentChatTarget !== data.user) {
                 incrementUnread(data.user);
@@ -660,13 +670,31 @@ function clearHistory() {
 // Function to change and save profile pic
 function changeProfilePic(input) {
     if (input.files && input.files[0]) {
+        // Optional: Check file size (Base64 images can get very large)
+        if (input.files[0].size > 1024 * 1024) { // 1MB limit
+            alert("Image is too big! Please choose a file under 1MB.");
+            return;
+        }
+
         const reader = new FileReader();
         reader.onload = function(e) {
             const imageData = e.target.result;
-            // 1. Update own UI
+            
+            // 1. Update own UI immediately so it feels fast
             document.getElementById("myAvatar").src = imageData;
-            // 2. Save to browser storage
+            
+            // 2. Save to browser storage (for instant loading on refresh)
             localStorage.setItem("userAvatar_" + currentUsername, imageData);
+
+            // 3. SEND TO SERVER (This makes it stay even after Logout)
+            // This triggers the "update_avatar" block we added in main.go
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    type: "update_avatar",
+                    user: currentUsername,
+                    body: imageData
+                }));
+            }
         };
         reader.readAsDataURL(input.files[0]);
     }
