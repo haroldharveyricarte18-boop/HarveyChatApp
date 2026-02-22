@@ -157,23 +157,36 @@
     70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
     100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
 }
+
+/* Makes sure avatars don't look stretched or weird while loading */
+.message img {
+    background-color: #eee;
+    min-width: 28px;
+    min-height: 28px;
+}
     </style>
 </head>
 <div id="sidebar-overlay" onclick="toggleSidebar()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"></div>
 <body>
     <audio id="sendSound" src="https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3"></audio>
-<audio id="receiveSound" src="https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3"></audio>
-<audio id="deleteSound" src="https://assets.mixkit.co/active_storage/sfx/2360/2360-preview.mp3"></audio>
+    <audio id="receiveSound" src="https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3"></audio>
+    <audio id="deleteSound" src="https://assets.mixkit.co/active_storage/sfx/2360/2360-preview.mp3"></audio>
 
-    <div class="sidebar">
-        <div class="sidebar-header">HarveyChatApp</div>
+    <div class="sidebar"> <div class="sidebar-header">HarveyChatApp</div>
         <div class="user-profile">
-            <img id="myAvatar" src="" alt="profile">
+            <div style="position: relative; width: 45px; height: 45px; flex-shrink: 0;">
+                <img id="myAvatar" src="" alt="profile" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover; border: 2px solid var(--active-blue);">
+                <i class="fas fa-camera" onclick="document.getElementById('profileInput').click()" 
+                   style="position: absolute; bottom: -2px; right: -2px; background: var(--active-blue); color: white; font-size: 10px; padding: 4px; border-radius: 50%; cursor: pointer; border: 2px solid var(--sidebar-bg);"></i>
+            </div>
+            <input type="file" id="profileInput" accept="image/*" style="display:none" onchange="changeProfilePic(this)">
+            
             <div class="user-info">
                 <strong id="myName">Loading...</strong>
                 <small id="myRole">Web Developer</small>
             </div>
         </div>
+
         <div class="menu-item"><i class="fas fa-th-large"></i> Dashboard</div>
         <div class="menu-item active"><i class="fas fa-comment-dots"></i> Conversations</div>
         <div class="menu-item"><i class="fas fa-folder"></i> Projects</div>
@@ -256,18 +269,21 @@ function addEmoji(emoji) {
 
 function sendImage(input) {
     if (input.files && input.files[0]) {
+        document.getElementById("sendSound").play(); // Play sound
         const reader = new FileReader();
         reader.onload = function(e) {
             const messageData = {
                 type: "message",
+                user: currentUsername,
                 target: currentChatTarget,
-                body: e.target.result, // The Base64 string
-                is_image: true 
+                body: e.target.result, 
+                is_image: true,
+                user_avatar: getCurrentAvatar(currentUsername) // Send avatar with image too!
             };
             socket.send(JSON.stringify(messageData));
         };
         reader.readAsDataURL(input.files[0]);
-        input.value = ""; // Reset input
+        input.value = ""; 
     }
 }
 
@@ -288,104 +304,139 @@ if (!currentUsername || currentUsername === "Guest") {
 }
 
 document.getElementById("myName").innerText = currentUsername;
-document.getElementById("myAvatar").src = `https://ui-avatars.com/api/?name=${currentUsername}&background=random`;
+document.getElementById("myAvatar").src = getCurrentAvatar(currentUsername);
 
         // 2. WEBSOCKET LOGIC
         const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
 let socket = new WebSocket(protocol + window.location.host + "/ws");
 
-    socket.onmessage = function(event) {
-        const data = JSON.parse(event.data);
-        const chatBox = document.getElementById("chat-box");
-        const typingDiv = document.getElementById("typing-indicator");
+   socket.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    const chatBox = document.getElementById("chat-box");
+    const typingDiv = document.getElementById("typing-indicator");
 
-        if (data.type === "users") {
-            updateUserList(data.list);
-        } 
-        // 1. Handle Typing Indicator
-        else if (data.type === "typing" && data.user !== currentUsername) {
-            typingDiv.innerText = `${data.user} is typing...`;
-        } 
-        else if (data.type === "stop_typing") {
-            typingDiv.innerText = "";
-        }
-        // 2. Handle Deletion (Added sound here)
-        else if (data.type === "message_deleted") {
-            const el = document.querySelector(`[data-id="${data.id}"]`);
-            if (el) {
-                document.getElementById("deleteSound").play(); // Play sound
-                el.style.opacity = "0";
-                setTimeout(() => el.remove(), 300);
-            }
-        } 
-        // 3. Handle Messages (Added sound and read receipts)
-        else if (data.type === "message") {
-            const isGlobal = data.target === "Global" || !data.target;
-            const isRelevant = (isGlobal && currentChatTarget === "Global") || 
-                               (data.user === currentChatTarget && data.target === currentUsername) || 
-                               (data.user === currentUsername && data.target === currentChatTarget);
-
-            if (isRelevant) {
-                let msgDiv = document.createElement("div");
-                const isMe = data.user === currentUsername;
-                
-                // Play receive sound if it's not from me
-                if (!isMe) document.getElementById("receiveSound").play();
-
-                msgDiv.setAttribute("data-id", data.id);
-                msgDiv.className = isMe ? "message msg-sent" : "message msg-received";
-                
-                const deleteBtn = isMe ? 
-                    `<i class="fas fa-trash-alt" style="cursor:pointer; margin-left:8px; color:#ff4d4d; font-size:12px;" onclick="confirmDelete(${data.id})"></i>` : '';
-
-                // ADDED: Read Receipt Checkmark (Double check)
-                const checkMark = isMe ? `<i class="fas fa-check-double" style="margin-left:5px; color:#5d68e2;"></i>` : '';
-
-                msgDiv.innerHTML = `
-                    <span class="msg-author">${isMe ? "You" : data.user}</span>
-                    ${data.is_image ? 
-                        `<img src="${data.body}" class="chat-img" onclick="window.open(this.src)">` : 
-                        `<div class="msg-body">${data.body}</div>`
-                    }
-                    <div style="display: flex; justify-content: flex-end; align-items: center; font-size: 10px; opacity: 0.6; margin-top: 4px;">
-                        ${data.time}
-                        ${checkMark}
-                        ${deleteBtn}
-                    </div>
-                `;
-
-                chatBox.appendChild(msgDiv);
-                const isScrolledToBottom = chatBox.scrollHeight - chatBox.clientHeight <= chatBox.scrollTop + 100;
-if (isScrolledToBottom || isMe) {
-    chatBox.scrollTo({
-        top: chatBox.scrollHeight,
-        behavior: 'smooth'
-    });
+   if (data.type === "users") {
+    // We pass the whole 'data' object because it now contains 'user_info_list'
+    updateUserList(data);
 }
+    // 1. Handle Typing Indicator
+    else if (data.type === "typing" && data.user !== currentUsername) {
+        typingDiv.innerText = `${data.user} is typing...`;
+    } 
+    else if (data.type === "stop_typing") {
+        typingDiv.innerText = "";
+    }
+    // 2. Handle Deletion
+    else if (data.type === "message_deleted") {
+        const el = document.querySelector(`[data-id="${data.id}"]`);
+        if (el) {
+            document.getElementById("deleteSound").play();
+            el.style.opacity = "0";
+            setTimeout(() => el.remove(), 300);
+        }
+    } 
+    // 3. Handle Messages
+    else if (data.type === "message") {
+        const isGlobal = data.target === "Global" || !data.target;
+        const isRelevant = (isGlobal && currentChatTarget === "Global") || 
+                           (data.user === currentChatTarget && data.target === currentUsername) || 
+                           (data.user === currentUsername && data.target === currentChatTarget);
+
+        if (isRelevant) {
+            let msgDiv = document.createElement("div");
+            const isMe = data.user === currentUsername;
+            
+            if (!isMe) document.getElementById("receiveSound").play();
+
+            msgDiv.setAttribute("data-id", data.id);
+            msgDiv.className = isMe ? "message msg-sent" : "message msg-received";
+            
+            const deleteBtn = isMe ? 
+                `<i class="fas fa-trash-alt" style="cursor:pointer; margin-left:8px; color:#ff4d4d; font-size:12px;" onclick="confirmDelete(${data.id})"></i>` : '';
+
+            const checkMark = isMe ? `<i class="fas fa-check-double" style="margin-left:5px; color:#5d68e2;"></i>` : '';
+
+            // --- AVATAR LOGIC ---
+            // If the message data doesn't have an avatar, use a default generated one
+            const avatarSrc = data.user_avatar || `https://ui-avatars.com/api/?name=${data.user}&background=random`;
+            // This ensures that if Harold chats, his avatar is saved for the sidebar to use later
+if (data.user_avatar) {
+    localStorage.setItem(`avatar_${data.user}`, data.user_avatar);
+}
+
+            msgDiv.innerHTML = `
+                <div style="display: flex; gap: 10px; align-items: flex-start; flex-direction: ${isMe ? 'row-reverse' : 'row'}">
+                    <img src="${avatarSrc}" style="width: 28px; height: 28px; border-radius: 50%; object-fit: cover; background: #eee; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.1);">
+                    <div style="display: flex; flex-direction: column; align-items: ${isMe ? 'flex-end' : 'flex-start'}; max-width: 100%;">
+                        <span class="msg-author" style="margin-bottom: 2px;">${isMe ? "You" : data.user}</span>
+                        
+                        ${data.is_image ? 
+                            `<img src="${data.body}" class="chat-img" style="border-radius: 8px; max-width: 100%; cursor: pointer;" onclick="window.open(this.src)">` : 
+                            `<div class="msg-body" style="word-break: break-word;">${data.body}</div>`
+                        }
+
+                        <div style="display: flex; align-items: center; font-size: 10px; opacity: 0.6; margin-top: 4px;">
+                            ${data.time}
+                            ${checkMark}
+                            ${deleteBtn}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            chatBox.appendChild(msgDiv);
+            const isScrolledToBottom = chatBox.scrollHeight - chatBox.clientHeight <= chatBox.scrollTop + 100;
+            if (isScrolledToBottom || isMe) {
+                chatBox.scrollTo({
+                    top: chatBox.scrollHeight,
+                    behavior: 'smooth'
+                });
             }
         }
-    };
+    }
+};
 
-        function updateUserList(users) {
+       function updateUserList(eventData) {
     const listDiv = document.getElementById("user-list");
     listDiv.innerHTML = "";
     
-    // Always add the Global Group first
+    // 1. Always add the Global Group first
     const globalItem = document.createElement("div");
     globalItem.className = "active-user-item";
-    globalItem.innerHTML = `<strong>Global Chat Room</strong>`;
+    globalItem.innerHTML = `
+        <img src="https://ui-avatars.com/api/?name=Global+Chat&background=5d68e2&color=fff" alt="">
+        <div><strong>Global Chat Room</strong><br><small style="color:var(--text-gray)">Active now</small></div>
+    `;
     globalItem.onclick = () => switchChat("Global");
     listDiv.appendChild(globalItem);
 
-    users.forEach(user => {
-        if (user === currentUsername) return; // Don't chat with yourself
+    // 2. Get the list of info objects from the server event
+    const userInfos = eventData.user_info_list || [];
+
+    userInfos.forEach(info => {
+        if (info.username === currentUsername) return; // Don't chat with yourself
+
+        // Save the avatar the server sent into localStorage so it's cached
+        if (info.avatar) {
+            localStorage.setItem(`avatar_${info.username}`, info.avatar);
+        }
+
+        // Determine which image to show: 
+        // 1. The one the server just sent
+        // 2. OR the one we already have in localStorage
+        // 3. OR the default UI-Avatar
+        const displayAvatar = info.avatar || getCurrentAvatar(info.username);
+
         const userItem = document.createElement("div");
         userItem.className = "active-user-item";
         userItem.innerHTML = `
-            <img src="https://ui-avatars.com/api/?name=${user}&background=random" alt="">
-            <div><strong>${user}</strong><br><small style="color:#28a745"><span class="online-pulse"></span>Active Now</small></div>
+            <img src="${displayAvatar}" alt="${info.username}" style="width: 35px; height: 35px; border-radius: 50%; object-fit: cover;">
+            <div>
+                <strong>${info.username}</strong><br>
+                <small style="color:#28a745"><span class="online-pulse"></span>Active Now</small>
+            </div>
         `;
-        userItem.onclick = () => switchChat(user);
+        userItem.onclick = () => switchChat(info.username);
         listDiv.appendChild(userItem);
     });
 }
@@ -402,7 +453,7 @@ function switchChat(target) {
             socket.send(JSON.stringify({ type: "load_history", target: target }));
         }
 
-       function sendMessage() {
+      function sendMessage() {
     let input = document.getElementById("msgInput");
     if(input.value.trim() !== "") {
         // Play the "Send" sound effect immediately
@@ -410,9 +461,13 @@ function switchChat(target) {
 
         const messageData = {
             type: "message",
-            target: currentChatTarget, // This sends it to the person you clicked
-            body: input.value
+            user: currentUsername, // Explicitly send username
+            target: currentChatTarget, 
+            body: input.value,
+            // We add the avatar here so others can see it
+            user_avatar: getCurrentAvatar(currentUsername) 
         };
+
         socket.send(JSON.stringify(messageData));
         input.value = "";
         
@@ -481,6 +536,28 @@ function clearHistory() {
         }));
         document.getElementById("chat-box").innerHTML = ""; // Clear screen immediately
     }
+}
+
+// Function to change and save profile pic
+function changeProfilePic(input) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const imageData = e.target.result;
+            // 1. Update own UI
+            document.getElementById("myAvatar").src = imageData;
+            // 2. Save to browser storage
+            localStorage.setItem("userAvatar_" + currentUsername, imageData);
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+// Function to get the current avatar (either saved one or default)
+function getCurrentAvatar(username) {
+    const saved = localStorage.getItem("userAvatar_" + username);
+    if (saved) return saved;
+    return `https://ui-avatars.com/api/?name=${username}&background=random`;
 }
     </script>
 </body>

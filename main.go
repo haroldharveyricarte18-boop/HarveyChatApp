@@ -15,15 +15,21 @@ import (
 )
 
 type Event struct {
-	Type    string   `json:"type"`
-	User    string   `json:"user"`
-	Target  string   `json:"target"`
-	Body    string   `json:"body"`
-	List    []string `json:"list"`
-	Time    string   `json:"time"`
-	IsImage bool     `json:"is_image"`
-	ID      int      `json:"id"`
-	IsRead  bool     `json:"is_read"`
+	Type       string   `json:"type"`
+	User       string   `json:"user"`
+	Target     string   `json:"target"`
+	Body       string   `json:"body"`
+	List       []string `json:"list"`
+	Time       string   `json:"time"`
+	IsImage    bool     `json:"is_image"`
+	ID         int      `json:"id"`
+	IsRead     bool     `json:"is_read"`
+	UserAvatar string   `json:"user_avatar"`
+}
+
+type UserInfo struct {
+	Username string `json:"username"`
+	Avatar   string `json:"avatar"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -52,7 +58,6 @@ func main() {
 		return
 	}
 
-	// Added is_image column to the table
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS messages (
 		id SERIAL PRIMARY KEY,
 		sender TEXT,
@@ -60,12 +65,15 @@ func main() {
 		body TEXT,
 		time TEXT,
 		is_image BOOLEAN DEFAULT FALSE,
-		is_read BOOLEAN DEFAULT FALSE
+		is_read BOOLEAN DEFAULT FALSE,
+		user_avatar TEXT 
 	)`)
 
 	if err != nil {
 		fmt.Println("Error creating table:", err)
 	}
+
+	db.Exec("ALTER TABLE messages ADD COLUMN IF NOT EXISTS user_avatar TEXT")
 
 	http.HandleFunc("/", homeHandler)
 	http.HandleFunc("/ws", wsHandler)
@@ -213,17 +221,16 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func saveMessage(e *Event) { // Note the * before Event
+func saveMessage(e *Event) {
 	if e.Type != "message" {
 		return
 	}
 
-	// We use QueryRow instead of Exec so we can catch the 'id'
 	err := db.QueryRow(`
-		INSERT INTO messages (sender, target, body, time, is_image) 
-		VALUES ($1, $2, $3, $4, $5) 
+		INSERT INTO messages (sender, target, body, time, is_image, user_avatar) 
+		VALUES ($1, $2, $3, $4, $5, $6) 
 		RETURNING id`,
-		e.User, e.Target, e.Body, e.Time, e.IsImage).Scan(&e.ID)
+		e.User, e.Target, e.Body, e.Time, e.IsImage, e.UserAvatar).Scan(&e.ID)
 
 	if err != nil {
 		fmt.Println("Save error:", err)
@@ -277,14 +284,34 @@ func sendPrivateMessage(event Event) {
 }
 
 func broadcastUserList() {
-	var userList []string
+	var userInfoList []UserInfo
+
 	mutex.Lock()
+	// We iterate through all currently connected clients
 	for name := range clients {
-		userList = append(userList, name)
+		var avatar string
+
+		// Look up the most recent avatar for this specific user in the database
+		// We use COALESCE so it doesn't error out if they've never sent a message
+		err := db.QueryRow("SELECT COALESCE(user_avatar, '') FROM messages WHERE sender = $1 ORDER BY id DESC LIMIT 1", name).Scan(&avatar)
+
+		if err != nil {
+			avatar = "" // No history found for this user, use empty string
+		}
+
+		userInfoList = append(userInfoList, UserInfo{
+			Username: name,
+			Avatar:   avatar,
+		})
 	}
 	mutex.Unlock()
 
-	event := Event{Type: "users", List: userList}
+	// We use a map here so we don't have to change your main Event struct too much
+	event := map[string]interface{}{
+		"type":           "users",
+		"user_info_list": userInfoList,
+	}
+
 	data, _ := json.Marshal(event)
 
 	mutex.Lock()
@@ -299,12 +326,12 @@ func loadSpecificHistory(conn *websocket.Conn, username string, target string) {
 	var err error
 
 	if target == "Global" {
-		// Added id to the SELECT statement
-		rows, err = db.Query("SELECT id, sender, target, body, time, is_image FROM messages WHERE target = 'Global' ORDER BY id ASC")
+		// Use COALESCE to handle old messages where user_avatar is NULL
+		rows, err = db.Query("SELECT id, sender, target, body, time, is_image, COALESCE(user_avatar, '') FROM messages WHERE target = 'Global' ORDER BY id ASC")
 	} else {
-		// Added id to the SELECT statement
+		// Use COALESCE to handle old messages where user_avatar is NULL
 		rows, err = db.Query(`
-			SELECT id, sender, target, body, time, is_image FROM messages 
+			SELECT id, sender, target, body, time, is_image, COALESCE(user_avatar, '') FROM messages 
 			WHERE (sender = $1 AND target = $2) OR (sender = $2 AND target = $1)
 			ORDER BY id ASC`, username, target)
 	}
@@ -317,15 +344,14 @@ func loadSpecificHistory(conn *websocket.Conn, username string, target string) {
 
 	for rows.Next() {
 		var e Event
-		// Added e.ID to Scan - it MUST be first because 'id' is first in the SELECT above
-		err := rows.Scan(&e.ID, &e.User, &e.Target, &e.Body, &e.Time, &e.IsImage)
+		// Scanning into &e.UserAvatar now works even for old messages thanks to COALESCE
+		err := rows.Scan(&e.ID, &e.User, &e.Target, &e.Body, &e.Time, &e.IsImage, &e.UserAvatar)
 		if err != nil {
 			fmt.Println("Scan error in history:", err)
 			continue
 		}
 
 		e.Type = "message"
-		// Send each historical message (now including its ID) to the user's screen
 		conn.WriteJSON(e)
 	}
 
