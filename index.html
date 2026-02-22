@@ -164,6 +164,55 @@
     min-width: 28px;
     min-height: 28px;
 }
+
+.notification-badge {
+    background-color: #ff4d4d;
+    color: white;
+    font-size: 10px; /* Slightly smaller for better fit */
+    font-weight: 700;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 50%; /* Pure circle for single digits */
+    display: none; /* Hidden by default until a message arrives */
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    margin-left: auto; /* Pushes the badge to the far right of the user item */
+    box-shadow: 0 2px 4px rgba(255, 77, 77, 0.3);
+    border: 1.5px solid var(--bg-side); /* Creates a gap between badge and background */
+    line-height: 1;
+}
+
+/* If the badge has more than one digit, make it an oval instead of a circle */
+.notification-badge:not(:empty) {
+    padding: 0 6px;
+    border-radius: 10px;
+}
+
+/* Dark Mode Colors */
+body.dark-mode {
+    --sidebar-bg: #1a1d23;
+    --bg-light: #121418;
+    --border-color: #2d323c;
+    --text-gray: #a0a6b5;
+}
+
+/* UI Overrides */
+body.dark-mode .chat-container,
+body.dark-mode .main-chat,
+body.dark-mode .input-area,
+body.dark-mode .conv-header,
+body.dark-mode .conv-list { background-color: #1a1d23; color: #e0e6ed; }
+
+body.dark-mode .messages { background-color: #121418; }
+body.dark-mode input { background: #242933; border-color: #3d4654; color: white; }
+body.dark-mode .msg-sent { background: #2d323c; color: #e0e6ed; }
+body.dark-mode .active-user-item:hover { background: #2d323c; }
+
+/* Transitions */
+body, .sidebar, .main-chat, .messages, .input-area {
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
     </style>
 </head>
 <div id="sidebar-overlay" onclick="toggleSidebar()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"></div>
@@ -181,10 +230,15 @@
             </div>
             <input type="file" id="profileInput" accept="image/*" style="display:none" onchange="changeProfilePic(this)">
             
-            <div class="user-info">
-                <strong id="myName">Loading...</strong>
-                <small id="myRole">Web Developer</small>
-            </div>
+            <div class="user-info" style="flex-grow: 1; display: flex; justify-content: space-between; align-items: center;">
+    <div>
+        <strong id="myName">Loading...</strong>
+        <small id="myRole">Web Developer</small>
+    </div>
+    <i id="theme-icon" class="fas fa-moon" 
+       style="cursor: pointer; font-size: 14px; color: #fff; padding: 5px; transition: color 0.3s ease;" 
+       onclick="toggleNightMode()"></i>
+</div>
         </div>
 
         <div class="menu-item"><i class="fas fa-th-large"></i> Dashboard</div>
@@ -315,10 +369,10 @@ let socket = new WebSocket(protocol + window.location.host + "/ws");
     const chatBox = document.getElementById("chat-box");
     const typingDiv = document.getElementById("typing-indicator");
 
-   if (data.type === "users") {
-    // We pass the whole 'data' object because it now contains 'user_info_list'
-    updateUserList(data);
-}
+    if (data.type === "users") {
+        // We pass the whole 'data' object because it now contains 'user_info_list'
+        updateUserList(data);
+    }
     // 1. Handle Typing Indicator
     else if (data.type === "typing" && data.user !== currentUsername) {
         typingDiv.innerText = `${data.user} is typing...`;
@@ -357,12 +411,11 @@ let socket = new WebSocket(protocol + window.location.host + "/ws");
             const checkMark = isMe ? `<i class="fas fa-check-double" style="margin-left:5px; color:#5d68e2;"></i>` : '';
 
             // --- AVATAR LOGIC ---
-            // If the message data doesn't have an avatar, use a default generated one
             const avatarSrc = data.user_avatar || `https://ui-avatars.com/api/?name=${data.user}&background=random`;
-            // This ensures that if Harold chats, his avatar is saved for the sidebar to use later
-if (data.user_avatar) {
-    localStorage.setItem(`avatar_${data.user}`, data.user_avatar);
-}
+            
+            if (data.user_avatar) {
+                localStorage.setItem(`avatar_${data.user}`, data.user_avatar);
+            }
 
             msgDiv.innerHTML = `
                 <div style="display: flex; gap: 10px; align-items: flex-start; flex-direction: ${isMe ? 'row-reverse' : 'row'}">
@@ -391,6 +444,14 @@ if (data.user_avatar) {
                     top: chatBox.scrollHeight,
                     behavior: 'smooth'
                 });
+            }
+        }
+
+        // --- NOTIFICATION BADGE LOGIC ---
+        // Triggered even if the chat isn't "relevant" (i.e., you're in Global but Harold DMs you)
+        if (data.target !== "Global" && data.target && data.user !== currentUsername) {
+            if (currentChatTarget !== data.user) {
+                incrementUnread(data.user);
             }
         }
     }
@@ -426,16 +487,20 @@ if (data.user_avatar) {
         // 2. OR the one we already have in localStorage
         // 3. OR the default UI-Avatar
         const displayAvatar = info.avatar || getCurrentAvatar(info.username);
+        const unreadCount = getUnreadCount(info.username);
 
         const userItem = document.createElement("div");
         userItem.className = "active-user-item";
         userItem.innerHTML = `
-            <img src="${displayAvatar}" alt="${info.username}" style="width: 35px; height: 35px; border-radius: 50%; object-fit: cover;">
-            <div>
-                <strong>${info.username}</strong><br>
-                <small style="color:#28a745"><span class="online-pulse"></span>Active Now</small>
-            </div>
-        `;
+    <img src="${displayAvatar}" alt="${info.username}">
+    <div style="flex-grow: 1;">
+        <strong>${info.username}</strong><br>
+        <small style="color:#28a745"><span class="online-pulse"></span>Active Now</small>
+    </div>
+    <span id="badge-${info.username}" class="notification-badge" style="${unreadCount > 0 ? 'display:block' : 'display:none'}">
+        ${unreadCount}
+    </span>
+`;
         userItem.onclick = () => switchChat(info.username);
         listDiv.appendChild(userItem);
     });
@@ -443,6 +508,7 @@ if (data.user_avatar) {
 
 function switchChat(target) {
             currentChatTarget = target;
+            clearUnread(target);
             document.getElementById("chat-title").innerText = (target === "Global") ? "Global Chat Room" : "Chat with " + target;
             document.getElementById("chat-box").innerHTML = ""; 
             
@@ -558,6 +624,74 @@ function getCurrentAvatar(username) {
     const saved = localStorage.getItem("userAvatar_" + username);
     if (saved) return saved;
     return `https://ui-avatars.com/api/?name=${username}&background=random`;
+}
+
+// Object to keep track of unread counts
+let unreadMessages = JSON.parse(localStorage.getItem('unread_counts') || '{}');
+
+function getUnreadCount(user) {
+    return unreadMessages[user] || 0;
+}
+
+function incrementUnread(user) {
+    if (currentChatTarget === user) return; // Don't count if we are already looking at the chat
+    
+    unreadMessages[user] = (unreadMessages[user] || 0) + 1;
+    localStorage.setItem('unread_counts', JSON.stringify(unreadMessages));
+    
+    // Refresh the list to show the badge
+    // (Or just update the specific badge element if you want to be fancy)
+    const badge = document.getElementById(`badge-${user}`);
+    if (badge) {
+        badge.innerText = unreadMessages[user];
+        badge.style.display = 'flex';
+    }
+}
+
+function clearUnread(user) {
+    unreadMessages[user] = 0;
+    localStorage.setItem('unread_counts', JSON.stringify(unreadMessages));
+    
+    const badge = document.getElementById(`badge-${user}`);
+    if (badge) {
+        badge.style.display = 'none';
+    }
+}
+
+// Check for saved theme on page load
+document.addEventListener('DOMContentLoaded', () => {
+    const savedTheme = localStorage.getItem('theme');
+    const icon = document.getElementById('theme-icon');
+    
+    if (savedTheme === 'dark') {
+        document.body.classList.add('dark-mode');
+        if(icon) { 
+            icon.className = 'fas fa-sun';
+            icon.style.color = '#fff'; // Sun is white
+        }
+    } else {
+        if(icon) {
+            icon.className = 'fas fa-moon';
+            icon.style.color = '#f1c40f'; // Half-moon is yellow
+        }
+    }
+});
+
+function toggleNightMode() {
+    const isDark = document.body.classList.toggle('dark-mode');
+    const icon = document.getElementById('theme-icon');
+    
+    if (isDark) {
+        // Switch to Dark Mode: Icon becomes a White Sun
+        icon.className = 'fas fa-sun';
+        icon.style.color = '#fff'; 
+        localStorage.setItem('theme', 'dark');
+    } else {
+        // Switch to Light Mode: Icon becomes a Yellow Moon
+        icon.className = 'fas fa-moon';
+        icon.style.color = '#f1c40f'; 
+        localStorage.setItem('theme', 'light');
+    }
 }
     </script>
 </body>
